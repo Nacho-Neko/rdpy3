@@ -1,0 +1,11 @@
+*.pyc
+.project
+.pydevproject
+README.md~
+*.so
+*.os
+dist/*
+build/*
+rdpy3.egg-info/*
+*.whl
+publish.sh
