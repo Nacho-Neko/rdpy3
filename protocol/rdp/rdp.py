@@ -359,7 +359,7 @@ class RDPClientController(pdu_layer.PDUClientListener):
         rect.top.value = top
         rect.right.value = right
         rect.bottom.value = bottom
-        refreshpdu_areasToRefresh._array.append(rect)
+        #refreshpdu_areasToRefresh._array.append(rect)
         self._pduLayer.sendDataPDU(refreshPDU)
             
     def close(self):
