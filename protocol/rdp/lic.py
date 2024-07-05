@@ -29,8 +29,8 @@ from rdpy3.core.error import InvalidExpectedDataException
 import rdpy3.core.log as log
 from . import sec
 from .t125 import gcc
-from rdpy3.security import rc4
 from rdpy3.security import rsa_wrapper as rsa
+from Crypto.Cipher import ARC4
 
 class MessageType(object):
     """
@@ -336,7 +336,8 @@ class LicenseManager(object):
         serverEncryptedChallenge = platformChallenge.encryptedPlatformChallenge.blobData.value
         #decrypt server challenge
         #it should be TEST word in unicode format
-        serverChallenge = rc4.crypt(rc4.RC4Key(self._licenseKey), serverEncryptedChallenge)
+        rc4 = ARC4.new(self._licenseKey)
+        serverChallenge = rc4.encrypt(serverEncryptedChallenge)
         if serverChallenge != "T\x00E\x00S\x00T\x00\x00\x00":
             raise InvalidExpectedDataException("bad license server challenge")
         
@@ -345,9 +346,11 @@ class LicenseManager(object):
         s.writeType((UInt32Le(2), String(self._hostname + self._username + "\x00" * 16)))
         hwid = s.getvalue()[:20]
         
+        rc4 = ARC4.new(self._licenseKey)
+
         message = ClientPLatformChallengeResponse()
         message.encryptedPlatformChallengeResponse.blobData.value = serverEncryptedChallenge
-        message.encryptedHWID.blobData.value = rc4.crypt(rc4.RC4Key(self._licenseKey), hwid)
+        message.encryptedHWID.blobData.value = rc4.encrypt(hwid)
         message.MACData.value = sec.macData(self._macSalt, serverChallenge + hwid)
         
         self._transport.sendFlagged(sec.SecurityFlag.SEC_LICENSE_PKT, LicPacket(message))

@@ -28,10 +28,11 @@ from builtins import object
 import hashlib, hmac, struct, datetime
 from . import sspi
 import rdpy3.security.pyDes as pyDes
-import rdpy3.security.rc4 as rc4
 from rdpy3.security.rsa_wrapper import random
 from rdpy3.core.type import CompositeType, CallableValue, String, UInt8, UInt16Le, UInt24Le, UInt32Le, sizeof, Stream
 from rdpy3.core import filetimes, error
+from Crypto.Cipher import ARC4 
+from Crypto.Cipher.ARC4 import ARC4Cipher 
 
 class MajorVersion(object):
     """
@@ -388,7 +389,8 @@ def RC4K(key, plaintext):
     @param plaintext: {str} plaintext
     @return {str} encrypted text
     """
-    return rc4.crypt(rc4.RC4Key(key), plaintext)
+    rc4 = ARC4.new(key)
+    return rc4.encrypt(plaintext)
 
 def KXKEYv2(SessionBaseKey, LmChallengeResponse, ServerChallenge):
     """
@@ -458,10 +460,10 @@ def ComputeResponsev2(ResponseKeyNT, ResponseKeyLM, ServerChallenge, ClientChall
     
     return NtChallengeResponse, LmChallengeResponse, SessionBaseKey
 
-def MAC(handle, SigningKey, SeqNum, Message):
+def MAC(handle : ARC4Cipher, SigningKey, SeqNum, Message):
     """
     @summary: generate signature for application message
-    @param handle: {rc4.RC4Key} handle on crypt
+    @param handle: {Arc4.ARC4Key} handle on crypt
     @param SigningKey: {str} Signing key
     @param SeqNum: {int} Sequence number
     @param Message: Message to sign
@@ -473,8 +475,8 @@ def MAC(handle, SigningKey, SeqNum, Message):
     #write the SeqNum
     s = Stream()
     s.writeType(signature.SeqNum)
-    
-    signature.Checksum.value = rc4.crypt(handle, HMAC_MD5(SigningKey, s.getvalue() + Message)[:8])
+    hmac_md5 = HMAC_MD5(SigningKey, s.getvalue() + Message)[:8]
+    signature.Checksum.value = handle.encrypt(hmac_md5)
     
     return signature
 
@@ -568,8 +570,7 @@ class NTLMv2(sspi.IAuthenticationProtocol):
         ServerSigningKey = SIGNKEY(ExportedSessionKey, False)
         ClientSealingKey = SEALKEY(ExportedSessionKey, True)
         ServerSealingKey = SEALKEY(ExportedSessionKey, False)
-        
-        interface = NTLMv2SecurityInterface(rc4.RC4Key(ClientSealingKey), rc4.RC4Key(ServerSealingKey), ClientSigningKey, ServerSigningKey)
+        interface = NTLMv2SecurityInterface(ARC4.new(ClientSealingKey), ARC4.new(ServerSealingKey), ClientSigningKey, ServerSigningKey)
         
         return self._authenticateMessage, interface
     
@@ -588,10 +589,10 @@ class NTLMv2SecurityInterface(sspi.IGenericSecurityService):
     """
     @summary: Generic Security Service for NTLM session
     """
-    def __init__(self, encryptHandle, decryptHandle, signingKey, verifyKey):
+    def __init__(self, encryptHandle : ARC4Cipher, decryptHandle : ARC4Cipher, signingKey, verifyKey):
         """
-        @param encryptHandle: {rc4.RC4Key} rc4 keystream for encrypt phase
-        @param decryptHandle: {rc4.RC4Key} rc4 keystream for decrypt phase
+        @param encryptHandle: {Arc4.RC4Key} Arc4 keystream for encrypt phase
+        @param decryptHandle: {Arc4.RC4Key} Arc4 keystream for decrypt phase
         @param signingKey: {str} signingKey
         @param verifyKey: {str} verifyKey
         """
@@ -607,7 +608,7 @@ class NTLMv2SecurityInterface(sspi.IGenericSecurityService):
         @param data: data to encrypt
         @return: {str} encrypted data
         """
-        encryptedData = rc4.crypt(self._encryptHandle, data)
+        encryptedData = self._encryptHandle.encrypt(data)
         signature = MAC(self._encryptHandle, self._signingKey, self._seqNum, data)
         self._seqNum += 1
         s = Stream()
@@ -625,8 +626,8 @@ class NTLMv2SecurityInterface(sspi.IGenericSecurityService):
         s.readType((signature, message))
         
         #decrypt message
-        plaintextMessage = rc4.crypt(self._decryptHandle, message.value)
-        checksum = rc4.crypt(self._decryptHandle, signature.Checksum.value)
+        plaintextMessage = self._decryptHandle.encrypt(message.value)
+        checksum = self._decryptHandle.encrypt(signature.Checksum.value)
         
         #recompute checksum
         t = Stream()

@@ -35,8 +35,8 @@ from rdpy3.core.type import CompositeType, CallableValue, Stream, UInt32Le, UInt
 from rdpy3.core.layer import LayerAutomata, IStreamSender
 from rdpy3.core.error import InvalidExpectedDataException
 from rdpy3.core import log
-from rdpy3.security import rc4
 import rdpy3.security.rsa_wrapper as rsa
+from Crypto.Cipher.ARC4 import ARC4Cipher 
 
 class SecurityFlag(object):
     """
@@ -303,15 +303,18 @@ def updateKey(initialKey, currentKey, method):
     #generate valid key
     if method == gcc.EncryptionMethod.ENCRYPTION_FLAG_40BIT:
         tempKey128 = tempKey(initialKey[:8], currentKey[:8])
-        return gen40bits(rc4.crypt(rc4.RC4Key(tempKey128[:8]), tempKey128[:8]))
+        rc4 = ARC4.new(tempKey128[:8])
+        return gen40bits(rc4.encrypt(tempKey128[:8]))
     
     elif method == gcc.EncryptionMethod.ENCRYPTION_FLAG_56BIT:
         tempKey128 = tempKey(initialKey[:8], currentKey[:8])
-        return gen56bits(rc4.crypt(rc4.RC4Key(tempKey128[:8]), tempKey128[:8]))
+        rc4 = ARC4.new(tempKey128[:8])
+        return gen56bits(rc4.encrypt(tempKey128[:8]))
     
     elif method == gcc.EncryptionMethod.ENCRYPTION_FLAG_128BIT:
         tempKey128 = tempKey(initialKey, currentKey)
-        return rc4.crypt(rc4.RC4Key(tempKey128), tempKey128)
+        rc4 = ARC4.new(tempKey128)
+        return rc4.encrypt(tempKey128)
     
 class ClientSecurityExchangePDU(CompositeType):
     """
@@ -402,8 +405,8 @@ class SecLayer(LayerAutomata, IStreamSender, tpkt.IFastPathListener, tpkt.IFastP
         self._nbDecryptedPacket = 0
         
         #current rc4 tab
-        self._decryptRc4 = None
-        self._encryptRc4 = None
+        self._decryptRc4 : ARC4Cipher = None
+        self._encryptRc4 : ARC4Cipher = None
         
     
     def readEncryptedPayload(self, s, saltedMacGeneration):
@@ -454,7 +457,7 @@ class SecLayer(LayerAutomata, IStreamSender, tpkt.IFastPathListener, tpkt.IFastP
             log.debug("update encrypt key")
             self._currentEncryptKey = updateKey(    self._initialEncryptKey, self._currentEncryptKey, 
                                                     self.getGCCServerSettings().SC_SECURITY.encryptionMethod.value)
-            self._encryptRc4 = rc4.RC4Key(self._currentEncryptKey)
+            self._encryptRc4 = ARC4.new(self._currentEncryptKey)
             self._nbEncryptedPacket = 0
             
         self._nbEncryptedPacket += 1
@@ -625,8 +628,8 @@ class Client(SecLayer):
         #initialize keys
         self._currentDecrytKey = self._initialDecrytKey
         self._currentEncryptKey = self._initialEncryptKey
-        self._decryptRc4 = rc4.RC4Key(self._currentDecrytKey)
-        self._encryptRc4 = rc4.RC4Key(self._currentEncryptKey)
+        self._decryptRc4 = ARC4.new(self._currentDecrytKey)
+        self._encryptRc4 = ARC4.new(self._currentEncryptKey)
         
         #verify certificate
         if not self.getGCCServerSettings().SC_SECURITY.serverCertificate.certData.verify():
